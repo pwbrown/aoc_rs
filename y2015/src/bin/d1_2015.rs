@@ -1,8 +1,9 @@
 use utils::get_input_data;
 
-fn main() {
+#[tokio::main]
+async fn main() {
   // Get input data
-  let data = get_input_data("2015", "1");
+  let data = get_input_data("2015", "1").await;
   
   // Set starting floor
   let mut floor: i32 = 0;
