@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 utils = { path = "../utils" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+md5 = "0.7.0"
