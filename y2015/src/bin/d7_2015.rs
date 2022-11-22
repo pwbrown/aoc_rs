@@ -1,6 +1,6 @@
 use utils::get_input_data;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, cell::RefCell};
 use regex::Regex;
 
 // Possible Gate Types with their values
@@ -24,8 +24,24 @@ enum Signal {
   Value(Value),
 }
 
+struct Wire {
+  // The wire's incoming signal settings
+  signal: Signal,
+  // The wire's calculated output (used to improve performance)
+  output: RefCell<Option<i32>>,
+}
+
+impl Wire {
+  fn new(signal: Signal) -> Wire {
+    Wire {
+      signal,
+      output: RefCell::new(None),
+    }
+  }
+}
+
 // A cirucit is a mapping of wires with their corresponding signal
-type Circuit = HashMap<String, Signal>;
+type Circuit = HashMap<String, Wire>;
 
 #[tokio::main]
 async fn main() {
@@ -41,9 +57,12 @@ async fn main() {
 /// by traversing through the circuit's structure. Updates the circuit to cache
 /// the outputs of each wire as it is determined
 fn determine_output_at(circuit: &Circuit, wire_ident: &str) -> i32 {
-  let signal = circuit.get(wire_ident).unwrap();
+  let wire = circuit.get(wire_ident).unwrap();
+  if let Some(cached) = *wire.output.borrow() {
+    return cached;
+  }
   // Evaluate signal output
-  match signal {
+  let output = match &wire.signal {
     Signal::Gate(gate) => {
       match gate {
         Gate::Not(val) => !val_out(circuit, val),
@@ -54,7 +73,10 @@ fn determine_output_at(circuit: &Circuit, wire_ident: &str) -> i32 {
       }
     },
     Signal::Value(val) => val_out(circuit, val),
-  }
+  };
+  // Cache output
+  wire.output.replace(Some(output));
+  output
 }
 
 // Get a value's output
@@ -79,7 +101,7 @@ fn build_the_circuit(data: String) -> Circuit {
       let gate_str = gate_match.as_str();
       // Handle not gate
       if gate_str == "NOT" {
-        circuit.insert(wire_str, Signal::Gate(Gate::Not(right)));
+        circuit.insert(wire_str, Wire::new(Signal::Gate(Gate::Not(right))));
       } else {
         // Handle all other gates
         let left = str_to_value(String::from(caps.name("left").unwrap().as_str()));
@@ -90,11 +112,11 @@ fn build_the_circuit(data: String) -> Circuit {
           "RSHIFT" => Gate::Rshift(left, right),
           _ => panic!("Unhandled gate detected: {}", gate_str),
         };
-        circuit.insert(wire_str, Signal::Gate(gate));
+        circuit.insert(wire_str, Wire::new(Signal::Gate(gate)));
       }
     } else {
       // Signal is just a value
-      circuit.insert(wire_str, Signal::Value(right));
+      circuit.insert(wire_str, Wire::new(Signal::Value(right)));
     }
   }
 
