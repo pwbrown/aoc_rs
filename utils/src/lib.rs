@@ -1,5 +1,5 @@
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 use clap::Parser;
 use reqwest::header::COOKIE;
@@ -25,13 +25,13 @@ pub async fn get_input_data(year: &'static str, day: &'static str) -> String {
             // cache session string
             cache_session_token(sess);
             sess.to_string()
-        },
-        None => match get_session_from_cache() {
-            Some(sess) => {
-                sess
-            },
-            None => panic!("Session token was not found. Use the --session argument to initiate the cache."),
         }
+        None => match get_session_from_cache() {
+            Some(sess) => sess,
+            None => panic!(
+                "Session token was not found. Use the --session argument to initiate the cache."
+            ),
+        },
     };
 
     let data = match get_input_from_api(year, day, session).await {
@@ -56,10 +56,17 @@ fn get_data_from_cache(year: &'static str, day: &'static str) -> Option<String> 
 }
 
 /// Attempts to read the input data from the AOC input url directly
-async fn get_input_from_api(year: &'static str, day: &'static str, session: String) -> reqwest::Result<String> {
+async fn get_input_from_api(
+    year: &'static str,
+    day: &'static str,
+    session: String,
+) -> reqwest::Result<String> {
     let client = reqwest::Client::new();
     let res = client
-        .get(format!("https://adventofcode.com/{}/day/{}/input", year, day))
+        .get(format!(
+            "https://adventofcode.com/{}/day/{}/input",
+            year, day
+        ))
         .header(COOKIE, format!("session={}", session))
         .send()
         .await?
