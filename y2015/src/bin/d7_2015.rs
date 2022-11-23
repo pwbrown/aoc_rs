@@ -4,6 +4,7 @@ use std::{collections::HashMap, cell::RefCell};
 use regex::Regex;
 
 // Possible Gate Types with their values
+#[derive(Clone)]
 enum Gate {
   Not(Value),
   And(Value, Value),
@@ -13,35 +14,23 @@ enum Gate {
 }
 
 // Possible signal value type
+#[derive(Clone)]
 enum Value {
   Wire(String),
   Int(i32)
 }
 
 // A Wire's signal is either the result of a gate or a value type
+#[derive(Clone)]
 enum Signal {
   Gate(Gate),
   Value(Value),
 }
 
-struct Wire {
-  // The wire's incoming signal settings
-  signal: Signal,
-  // The wire's calculated output (used to improve performance)
-  output: RefCell<Option<i32>>,
-}
-
-impl Wire {
-  fn new(signal: Signal) -> Wire {
-    Wire {
-      signal,
-      output: RefCell::new(None),
-    }
-  }
-}
+type Cache = RefCell<HashMap<String, i32>>;
 
 // A cirucit is a mapping of wires with their corresponding signal
-type Circuit = HashMap<String, Wire>;
+type Circuit = HashMap<String, Signal>;
 
 #[tokio::main]
 async fn main() {
@@ -50,40 +39,51 @@ async fn main() {
   
   let circuit = build_the_circuit(data);
 
-  println!("Part 1 Answer: {} output at 'a'", determine_output_at(&circuit, "f"));
+  // Get part 1 answer
+  let part1_cache = RefCell::new(HashMap::new());
+  let part1_answer = determine_output_at(&circuit, &part1_cache, "a");
+  println!("Part 1 Answer: {} output at 'a'", part1_answer);
+
+  // Get part 2 answer (override b signal with the value from a)
+  let part2_cache = RefCell::new(HashMap::new());
+  part2_cache.borrow_mut().insert(String::from("b"), part1_answer);
+  println!(
+    "Part 2 Answer: {} output at 'a'",
+    determine_output_at(&circuit, &part2_cache, "a")
+  );
 }
 
 /// Determines the output of a circuit at the specificied wire identifier
 /// by traversing through the circuit's structure. Updates the circuit to cache
 /// the outputs of each wire as it is determined
-fn determine_output_at(circuit: &Circuit, wire_ident: &str) -> i32 {
-  let wire = circuit.get(wire_ident).unwrap();
-  if let Some(cached) = *wire.output.borrow() {
-    return cached;
+fn determine_output_at(circuit: &Circuit, cache: &Cache, wire_ident: &str) -> i32 {
+  // Check the cache for a deterministic output
+  if let Some(cached) = cache.borrow().get(wire_ident) {
+    return *cached;
   }
   // Evaluate signal output
-  let output = match &wire.signal {
+  let output = match circuit.get(wire_ident).unwrap() {
     Signal::Gate(gate) => {
       match gate {
-        Gate::Not(val) => !val_out(circuit, val),
-        Gate::And(l, r) => val_out(circuit, l) & val_out(circuit, r),
-        Gate::Or(l, r) => val_out(circuit, l) | val_out(circuit, r),
-        Gate::Lshift(l, r) => val_out(circuit, l) << val_out(circuit, r),
-        Gate::Rshift(l, r) => val_out(circuit, l) >> val_out(circuit, r),
+        Gate::Not(val) => !val_out(circuit, cache, val),
+        Gate::And(l, r) => val_out(circuit, cache, l) & val_out(circuit, cache, r),
+        Gate::Or(l, r) => val_out(circuit, cache, l) | val_out(circuit, cache, r),
+        Gate::Lshift(l, r) => val_out(circuit, cache, l) << val_out(circuit, cache, r),
+        Gate::Rshift(l, r) => val_out(circuit, cache, l) >> val_out(circuit, cache, r),
       }
     },
-    Signal::Value(val) => val_out(circuit, val),
+    Signal::Value(val) => val_out(circuit, cache, val),
   };
   // Cache output
-  wire.output.replace(Some(output));
+  cache.borrow_mut().insert(String::from(wire_ident), output);
   output
 }
 
 // Get a value's output
-fn val_out(circuit: &Circuit, value: &Value) -> i32 {
+fn val_out(circuit: &Circuit, cache: &Cache, value: &Value) -> i32 {
   match value {
     Value::Int(val) => *val,
-    Value::Wire(wire_ident) => determine_output_at(circuit, wire_ident),
+    Value::Wire(wire_ident) => determine_output_at(circuit, cache, wire_ident),
   }
 }
 
@@ -101,7 +101,7 @@ fn build_the_circuit(data: String) -> Circuit {
       let gate_str = gate_match.as_str();
       // Handle not gate
       if gate_str == "NOT" {
-        circuit.insert(wire_str, Wire::new(Signal::Gate(Gate::Not(right))));
+        circuit.insert(wire_str, Signal::Gate(Gate::Not(right)));
       } else {
         // Handle all other gates
         let left = str_to_value(String::from(caps.name("left").unwrap().as_str()));
@@ -112,11 +112,11 @@ fn build_the_circuit(data: String) -> Circuit {
           "RSHIFT" => Gate::Rshift(left, right),
           _ => panic!("Unhandled gate detected: {}", gate_str),
         };
-        circuit.insert(wire_str, Wire::new(Signal::Gate(gate)));
+        circuit.insert(wire_str, Signal::Gate(gate));
       }
     } else {
       // Signal is just a value
-      circuit.insert(wire_str, Wire::new(Signal::Value(right)));
+      circuit.insert(wire_str, Signal::Value(right));
     }
   }
 
